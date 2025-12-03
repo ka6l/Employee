@@ -21,11 +21,8 @@ struct employee_t{
 };
 
 int create_db_header(int fd, struct dbHeader_t **headerOut);
-
 int validate_db_header(int fd, struct dbHeader_t **headerOut);
-
-int read_employees(int fd, struct dbHeader_t *, struct employee_t **employeesOut);
-
+int read_employees(int fd, struct dbHeader_t *);
 int output_file(int fd, struct dbHeader_t *);
 
 #endif

@@ -25,7 +25,7 @@ int output_file(int fd, struct dbHeader_t *dbhdr) {
 
 	lseek(fd, 0, SEEK_SET);
 
-	write(fd, dbhdr, sizeof(struct dbHeader_t));
+	write(fd, dbhdr, sizeof(struct dbHeader_t)); 
 
 	// int i = 0;
 	// for (; i < realcount; i++) {
@@ -82,6 +82,8 @@ int validate_db_header(int fd, struct dbHeader_t **headerOut) {
 	}
 
 	*headerOut = header;
+
+	return STATUS_SUCCESSFUL;
 }
 
 int create_db_header(int fd, struct dbHeader_t **headerOut) {
