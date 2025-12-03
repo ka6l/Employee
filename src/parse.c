@@ -27,11 +27,11 @@ int output_file(int fd, struct dbHeader_t *dbhdr, struct employee_t *employees) 
 
 	write(fd, dbhdr, sizeof(struct dbHeader_t)); 
 
-	// int i = 0;
-	// for (; i < realcount; i++) {
-	// 	employees[i].hours = htonl(employees[i].hours);
-	// 	write(fd, &employees[i], sizeof(struct employee_t));
-	// }
+	int i = 0;
+	for (; i < realcount; i++) {
+		employees[i].hours = htonl(employees[i].hours);
+		write(fd, &employees[i], sizeof(struct employee_t));
+	}
 
 	return STATUS_SUCCESSFUL;
 
