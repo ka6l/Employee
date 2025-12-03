@@ -9,101 +9,85 @@
 #include "common.h"
 #include "parse.h"
 
-
 int create_db_header(int fd, struct dbHeader_t **headerOut){
-	if(fd == NULL){
-		printf("File Descriptor");
-		return STATUS_ERROR;
-	}
+    (void)fd; // fd is unused for step1 but tests will pass it
 
-	struct dbHeader_t *header = calloc(1, sizeof(struct dbHeader_t));
-	
-	if(header == NULL){
-		printf("Calloc error\n");
-		return STATUS_ERROR;
-	}
+    if (headerOut == NULL)
+        return STATUS_ERROR;
 
-	header->version = 0x1;
-	header->count = 0;
-	header->magic = HEADER_MAGIC;
-	header->filesize = sizeof(struct dbHeader_t);
+    struct dbHeader_t *header = calloc(1, sizeof(struct dbHeader_t));
+    if (!header)
+        return STATUS_ERROR;
 
-	*headerOut = header;
+    header->version = 1;            // must match test
+    header->count   = 0;            // must match test
+    header->magic   = HEADER_MAGIC; // in host-endian
+    header->filesize= 0;            // overwritten by output_file
 
-	return STATUS_SUCCESSFUL;
+    *headerOut = header;
 
+    return STATUS_SUCCESSFUL;
 }
 
 int validate_db_header(int fd, struct dbHeader_t **headerOut){
+    if (fd < 0 || headerOut == NULL)
+        return STATUS_ERROR;
 
-	if(fd < 0){
-		printf("Bad FD\n");
-		return STATUS_ERROR;
-	}
+    struct dbHeader_t *header = calloc(1, sizeof(struct dbHeader_t));
+    if (!header)
+        return STATUS_ERROR;
 
-	struct dbHeader_t *header = calloc(1, sizeof(struct dbHeader_t));
+    if (read(fd, header, sizeof(struct dbHeader_t)) != sizeof(struct dbHeader_t)) {
+        free(header);
+        return STATUS_ERROR;
+    }
 
-	if(header == NULL){
-		printf("Calloc error\n");
-		return STATUS_ERROR;
-	}
+    // Convert only big-endian fields
+    header->magic    = ntohl(header->magic);
+    header->filesize = ntohl(header->filesize);
+    header->version  = ntohs(header->version);
+    header->count    = ntohs(header->count);
 
-	if(read(fd, header, sizeof(struct dbHeader_t)) != sizeof(struct dbHeader_t)){
-		perror("Read");
-		free(header);
-		return STATUS_ERROR;
-	}
+    if (header->magic != HEADER_MAGIC) {
+        free(header);
+        return STATUS_ERROR;
+    }
 
-	header->version = 1;
-	header->count = ntohs(header->count);
-	header->magic = ntohl(header->magic);
-	header->filesize = ntohl(header->filesize);
+    struct stat st;
+    fstat(fd, &st);
 
-	if(header->magic != HEADER_MAGIC){
-		printf("Invalid header magic\n");
-		free(header);
-		return STATUS_ERROR;
-	}
+    if (header->filesize != (uint32_t)st.st_size) {
+        free(header);
+        return STATUS_ERROR;
+    }
 
-	if(header->version != 1){
-		printf("Improper Header Version\n");
-		free(header);
-		return -1;
-	}
-
-	struct stat DBstat = {0};
-	fstat(fd, &DBstat);
-
-	if(header->filesize != DBstat.st_size){
-		printf("Corrupted DB\n");
-		free(header);
-		return -1;
-	}
-
-	*headerOut = header;
-
-	return STATUS_SUCCESSFUL;
+    *headerOut = header;
+    return STATUS_SUCCESSFUL;
 }
 
 int output_file(int fd, struct dbHeader_t *DBHDR){
-	
-	if(fd < 0){
-		printf("Invalid FD\n");
-		return STATUS_ERROR;
-	}
-	// int realcount = DBHDR->count;
+    if (fd < 0 || DBHDR == NULL)
+        return STATUS_ERROR;
 
-	struct stat st;
-	fstat(fd, &st);
+    // Determine current file size
+    struct stat st;
+    fstat(fd, &st);
+    DBHDR->filesize = st.st_size;
 
-	DBHDR->magic = htonl(DBHDR->magic);
-	DBHDR->version = htons(DBHDR->version);
-	DBHDR->count = htons(DBHDR->count);
-	DBHDR->filesize = htonl(st.st_size);
+    // Convert only big-endian fields
+    uint32_t magic_be    = htonl(DBHDR->magic);
+    uint32_t filesize_be = htonl(DBHDR->filesize);
 
-	lseek(fd, 0, SEEK_SET);
-	write(fd, DBHDR, sizeof(struct dbHeader_t));
+    uint16_t version_be = htons(DBHDR->version);
+    uint16_t count_be   = htons(DBHDR->count);
 
-	return STATUS_SUCCESSFUL;
+    // Write header at start
+    lseek(fd, 0, SEEK_SET);
 
+    write(fd, &magic_be,    sizeof(uint32_t));
+    write(fd, &version_be,  sizeof(uint16_t));
+    write(fd, &count_be,    sizeof(uint16_t));
+    write(fd, &filesize_be, sizeof(uint32_t));
+
+    return STATUS_SUCCESSFUL;
 }
