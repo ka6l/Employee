@@ -1,93 +1,103 @@
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
-#include <string.h>
-#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <string.h>
 
 #include "common.h"
 #include "parse.h"
 
-int create_db_header(int fd, struct dbHeader_t **headerOut){
-    (void)fd; // fd is unused for step1 but tests will pass it
+int output_file(int fd, struct dbHeader_t *dbhdr, struct employee_t *employees) {
+	if (fd < 0) {
+		printf("Got a bad FD from the user\n");
+		return STATUS_ERROR;
+	}
 
-    if (headerOut == NULL)
-        return STATUS_ERROR;
+	int realcount = dbhdr->count;
 
-    struct dbHeader_t *header = calloc(1, sizeof(struct dbHeader_t));
-    if (!header)
-        return STATUS_ERROR;
+	dbhdr->magic = htonl(dbhdr->magic);
+	dbhdr->filesize = htonl(sizeof(struct dbHeader_t) + (sizeof(struct employee_t) * realcount));
+	dbhdr->count = htons(dbhdr->count);
+	dbhdr->version = htons(dbhdr->version);
 
-    header->version = 1;            // must match test
-    header->count   = 0;            // must match test
-    header->magic   = HEADER_MAGIC; // in host-endian
-    header->filesize= 0;            // overwritten by output_file
+	lseek(fd, 0, SEEK_SET);
 
-    *headerOut = header;
+	write(fd, dbhdr, sizeof(struct dbHeader_t));
 
-    return STATUS_SUCCESSFUL;
+	int i = 0;
+	for (; i < realcount; i++) {
+		employees[i].hours = htonl(employees[i].hours);
+		write(fd, &employees[i], sizeof(struct employee_t));
+	}
+
+	return STATUS_SUCCESSFUL;
+
+}	
+
+int validate_db_header(int fd, struct dbHeader_t **headerOut) {
+	if (fd < 0) {
+		printf("Got a bad FD from the user\n");
+		return STATUS_ERROR;
+	}
+
+	struct dbHeader_t *header = calloc(1, sizeof(struct dbHeader_t));
+	if (header == NULL) {
+		printf("Malloc failed create a db header\n");
+		return STATUS_ERROR;
+	}
+
+	if (read(fd, header, sizeof(struct dbHeader_t)) != sizeof(struct dbHeader_t)) {
+		perror("read");
+		free(header);
+		return STATUS_ERROR;
+	}
+
+	header->version = ntohs(header->version);
+	header->count = ntohs(header->count);
+	header->magic = ntohl(header->magic);
+	header->filesize = ntohl(header->filesize);
+
+	if (header->magic != HEADER_MAGIC) {
+		printf("Impromper header magic\n");
+		free(header);
+		return -1;
+	}
+
+
+	if (header->version != 1) {
+		printf("Impromper header version\n");
+		free(header);
+		return -1;
+	}
+
+	struct stat dbstat = {0};
+	fstat(fd, &dbstat);
+	if (header->filesize != dbstat.st_size) {
+		printf("Corrupted database\n");
+		free(header);
+		return -1;
+	}
+
+	*headerOut = header;
 }
 
-int validate_db_header(int fd, struct dbHeader_t **headerOut){
-    if (fd < 0 || headerOut == NULL)
-        return STATUS_ERROR;
+int create_db_header(int fd, struct dbHeader_t **headerOut) {
+	struct dbHeader_t *header = calloc(1, sizeof(struct dbHeader_t));
+	if (header == NULL) {
+		printf("Malloc failed to create db header\n");
+		return STATUS_ERROR;
+	}
 
-    struct dbHeader_t *header = calloc(1, sizeof(struct dbHeader_t));
-    if (!header)
-        return STATUS_ERROR;
+	header->version = 0x1;
+	header->count = 0;
+	header->magic = HEADER_MAGIC;
+	header->filesize = sizeof(struct dbHeader_t);
 
-    if (read(fd, header, sizeof(struct dbHeader_t)) != sizeof(struct dbHeader_t)) {
-        free(header);
-        return STATUS_ERROR;
-    }
+	*headerOut = header;
 
-    // Convert only big-endian fields
-    header->magic    = ntohl(header->magic);
-    header->filesize = ntohl(header->filesize);
-    header->version  = ntohs(header->version);
-    header->count    = ntohs(header->count);
-
-    if (header->magic != HEADER_MAGIC) {
-        free(header);
-        return STATUS_ERROR;
-    }
-
-    struct stat st;
-    fstat(fd, &st);
-
-    if (header->filesize != (uint32_t)st.st_size) {
-        free(header);
-        return STATUS_ERROR;
-    }
-
-    *headerOut = header;
-    return STATUS_SUCCESSFUL;
+	return STATUS_SUCCESSFUL;
 }
 
-int output_file(int fd, struct dbHeader_t *DBHDR){
-    if (fd < 0 || DBHDR == NULL)
-        return STATUS_ERROR;
-
-    // Determine current file size
-    struct stat st;
-    fstat(fd, &st);
-    DBHDR->filesize = st.st_size;
-
-    // Convert only big-endian fields
-    uint32_t magic_be    = htonl(DBHDR->magic);
-    uint32_t filesize_be = htonl(DBHDR->filesize);
-
-    uint16_t version_be = htons(DBHDR->version);
-    uint16_t count_be   = htons(DBHDR->count);
-
-    // Write header at start
-    lseek(fd, 0, SEEK_SET);
-
-    write(fd, &magic_be,    sizeof(uint32_t));
-    write(fd, &version_be,  sizeof(uint16_t));
-    write(fd, &count_be,    sizeof(uint16_t));
-    write(fd, &filesize_be, sizeof(uint32_t));
-
-    return STATUS_SUCCESSFUL;
-}
