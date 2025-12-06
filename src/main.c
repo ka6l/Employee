@@ -85,7 +85,7 @@ int main(int argc, char *argv[]){
     }
 
 
-    output_file(DBFD, DBFDHR);
+    output_file(DBFD, &DBFDHR);
 
 
     return 0;
